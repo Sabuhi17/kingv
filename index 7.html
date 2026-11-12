@@ -1,0 +1,17 @@
+<!DOCTYPE html><html lang="az"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SOCIAL STATE – Sosial Rifah Yarışı</title><link rel="stylesheet" href="style.css"></head><body>
+<header><b>🏛️ SOCIAL STATE</b><span class="muted">Sosial Rifah Yarışı</span><span id="timer" hidden>25:00</span></header>
+<main>
+<div id="err" class="err"></div>
+<section id="lobby"><h1>Sosial dövlət qur</h1>
+<p class="muted">İki oyunçu, iki ölkə, 25 dəqiqə. Statistika illüstrativdir və rəsmi göstəricilər deyil.</p>
+<button id="create" class="btn">Otaq yarat</button>
+<div class="row"><input id="joinCode" maxlength="6" placeholder="6 simvollu kod"><button id="join" class="btn alt">Otağa qoşul</button></div></section>
+<section id="wait" hidden><h2>Otaq: <span id="code"></span></h2><div id="players" class="muted"></div>
+<h3>Ölkəni seç</h3><div id="countries" class="grid"></div><button id="ready" class="btn">Hazıram</button></section>
+<section id="game" hidden><div class="hud"><span id="stage"></span><span id="rnd"></span></div><div id="prog"><i></i></div>
+<div id="dash" class="grid dash"></div><div id="card" class="card"></div></section>
+<section id="end" hidden><h2>Yekun nəticələr</h2><div id="results"></div><button id="restart" class="btn">Yenidən oyna</button></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0"></script>
+<script src="gameData.js"></script><script src="supabase.js"></script><script src="script.js"></script></body></html>

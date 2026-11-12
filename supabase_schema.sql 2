@@ -1,0 +1,51 @@
+-- Supabase → Authentication → Providers → "Allow anonymous sign-ins" aktiv edin.
+create table rooms(code text primary key,p1 uuid not null,p2 uuid,c1 text,c2 text,r1 bool default false,r2 bool default false,
+ status text default 'lobby',round int default 1,ends_at timestamptz,created_at timestamptz default now());
+create table decisions(room_code text references rooms(code) on delete cascade,round int,player uuid,choice int,primary key(room_code,round,player));
+alter table rooms enable row level security; alter table decisions enable row level security;
+create policy rooms_read on rooms for select to authenticated using(auth.uid() in (p1,p2));
+-- Rəqibin qərarı yalnız raund bitəndən sonra (round artandan sonra) görünür:
+create policy dec_read on decisions for select to authenticated using(player=auth.uid() or exists(
+ select 1 from rooms r where r.code=decisions.room_code and auth.uid() in (r.p1,r.p2) and (r.round>decisions.round or r.status='finished')));
+-- Birbaşa insert/update/delete siyasəti YOXDUR: yazma yalnız aşağıdakı funksiyalarla.
+
+create function create_room() returns text language plpgsql security definer set search_path=public as $$
+declare c text; begin loop c:=upper(substr(md5(random()::text),1,6));
+ begin insert into rooms(code,p1) values(c,auth.uid()); return c; exception when unique_violation then null; end; end loop; end $$;
+
+create function join_room(p_code text) returns text language plpgsql security definer set search_path=public as $$
+begin p_code:=upper(p_code);
+ if exists(select 1 from rooms where code=p_code and p1=auth.uid()) then raise exception 'Bu sizin öz otağınızdır. 2-ci oyunçu başqa brauzer/cihazdan qoşulmalıdır'; end if;
+ update rooms set p2=auth.uid() where code=p_code and p2 is null and p1<>auth.uid();
+ if not exists(select 1 from rooms where code=p_code and auth.uid() in (p1,p2)) then raise exception 'Otaq tapılmadı və ya doludur'; end if;
+ return p_code; end $$;
+
+create function set_ready(p_code text,p_country text,p_ready bool) returns void language plpgsql security definer set search_path=public as $$
+begin
+ update rooms set c1=case when p1=auth.uid() then p_country else c1 end,c2=case when p2=auth.uid() then p_country else c2 end,
+  r1=case when p1=auth.uid() then (p_ready and p_country is not null) else r1 end,r2=case when p2=auth.uid() then (p_ready and p_country is not null) else r2 end
+ where code=p_code and status='lobby' and auth.uid() in (p1,p2);
+ update rooms set status='playing',round=1,ends_at=now()+interval '25 minutes' where code=p_code and status='lobby' and r1 and r2 and c1 is not null and c2 is not null;
+end $$;
+
+create function submit_decision(p_code text,p_round int,p_choice int) returns void language plpgsql security definer set search_path=public as $$
+declare r rooms; begin select * into r from rooms where code=p_code for update;
+ if r.status<>'playing' or auth.uid() not in (r.p1,r.p2) then raise exception 'Oyun aktiv deyil'; end if;
+ if now()>r.ends_at then update rooms set status='finished' where code=p_code; return; end if;
+ if p_round<>r.round or p_choice not between 0 and 3 then raise exception 'Yanlış raund'; end if;
+ insert into decisions values(p_code,p_round,auth.uid(),p_choice) on conflict do nothing;
+ if (select count(*) from decisions where room_code=p_code and round=p_round)=2 then
+  update rooms set round=round+1,status=case when round>=10 then 'finished' else status end where code=p_code; end if;
+end $$;
+
+create function finish_room(p_code text) returns void language sql security definer set search_path=public as $$
+ update rooms set status='finished' where code=p_code and status='playing' and now()>=ends_at and auth.uid() in (p1,p2) $$;
+
+create function restart_room(p_code text) returns void language plpgsql security definer set search_path=public as $$
+begin if exists(select 1 from rooms where code=p_code and auth.uid() in (p1,p2)) then
+ delete from decisions where room_code=p_code;
+ update rooms set status='lobby',round=1,r1=false,r2=false,c1=null,c2=null,ends_at=null where code=p_code; end if; end $$;
+
+revoke all on function create_room,join_room,set_ready,submit_decision,finish_room,restart_room from public,anon;
+grant execute on function create_room,join_room,set_ready,submit_decision,finish_room,restart_room to authenticated;
+alter publication supabase_realtime add table rooms,decisions;
